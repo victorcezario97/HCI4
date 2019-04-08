@@ -1,0 +1,104 @@
+2019-04-05 20:30:16.379977
+Traceback (most recent call last):
+  File "/usr/lib/python3.6/urllib/request.py", line 1318, in do_open
+    encode_chunked=req.has_header('Transfer-encoding'))
+  File "/usr/lib/python3.6/http/client.py", line 1239, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1285, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1234, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1026, in _send_output
+    self.send(msg)
+  File "/usr/lib/python3.6/http/client.py", line 964, in send
+    self.connect()
+  File "/usr/lib/python3.6/http/client.py", line 1392, in connect
+    super().connect()
+  File "/usr/lib/python3.6/http/client.py", line 936, in connect
+    (self.host,self.port), self.timeout, self.source_address)
+  File "/usr/lib/python3.6/socket.py", line 704, in create_connection
+    for res in getaddrinfo(host, port, 0, SOCK_STREAM):
+  File "/usr/lib/python3.6/socket.py", line 745, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -2] Name or service not known
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/victor/.local/lib/python3.6/site-packages/geopy/geocoders/base.py", line 355, in _call_geocoder
+    page = requester(req, timeout=timeout, **kwargs)
+  File "/usr/lib/python3.6/urllib/request.py", line 526, in open
+    response = self._open(req, data)
+  File "/usr/lib/python3.6/urllib/request.py", line 544, in _open
+    '_open', req)
+  File "/usr/lib/python3.6/urllib/request.py", line 504, in _call_chain
+    result = func(*args)
+  File "/usr/lib/python3.6/urllib/request.py", line 1361, in https_open
+    context=self._context, check_hostname=self._check_hostname)
+  File "/usr/lib/python3.6/urllib/request.py", line 1320, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno -2] Name or service not known>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "ass4.py", line 250, in applySearch
+    location = geolocator.geocode(self.locationEnt.get())
+  File "/home/victor/.local/lib/python3.6/site-packages/geopy/geocoders/osm.py", line 387, in geocode
+    self._call_geocoder(url, timeout=timeout), exactly_one
+  File "/home/victor/.local/lib/python3.6/site-packages/geopy/geocoders/base.py", line 386, in _call_geocoder
+    raise GeocoderServiceError(message)
+geopy.exc.GeocoderServiceError: [Errno -2] Name or service not known
+
+2019-04-05 20:30:21.161204
+Traceback (most recent call last):
+  File "/usr/lib/python3.6/urllib/request.py", line 1318, in do_open
+    encode_chunked=req.has_header('Transfer-encoding'))
+  File "/usr/lib/python3.6/http/client.py", line 1239, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1285, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1234, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/usr/lib/python3.6/http/client.py", line 1026, in _send_output
+    self.send(msg)
+  File "/usr/lib/python3.6/http/client.py", line 964, in send
+    self.connect()
+  File "/usr/lib/python3.6/http/client.py", line 1392, in connect
+    super().connect()
+  File "/usr/lib/python3.6/http/client.py", line 936, in connect
+    (self.host,self.port), self.timeout, self.source_address)
+  File "/usr/lib/python3.6/socket.py", line 704, in create_connection
+    for res in getaddrinfo(host, port, 0, SOCK_STREAM):
+  File "/usr/lib/python3.6/socket.py", line 745, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+socket.gaierror: [Errno -2] Name or service not known
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/victor/.local/lib/python3.6/site-packages/geopy/geocoders/base.py", line 355, in _call_geocoder
+    page = requester(req, timeout=timeout, **kwargs)
+  File "/usr/lib/python3.6/urllib/request.py", line 526, in open
+    response = self._open(req, data)
+  File "/usr/lib/python3.6/urllib/request.py", line 544, in _open
+    '_open', req)
+  File "/usr/lib/python3.6/urllib/request.py", line 504, in _call_chain
+    result = func(*args)
+  File "/usr/lib/python3.6/urllib/request.py", line 1361, in https_open
+    context=self._context, check_hostname=self._check_hostname)
+  File "/usr/lib/python3.6/urllib/request.py", line 1320, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno -2] Name or service not known>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "ass4.py", line 250, in applySearch
+    location = geolocator.geocode(self.locationEnt.get())
+  File "/home/victor/.local/lib/python3.6/site-packages/geopy/geocoders/osm.py", line 387, in geocode
+    self._call_geocoder(url, timeout=timeout), exactly_one
+  File "/home/victor/.local/lib/python3.6/site-packages/geopy/geocoders/base.py", line 386, in _call_geocoder
+    raise GeocoderServiceError(message)
+geopy.exc.GeocoderServiceError: [Errno -2] Name or service not known
+
