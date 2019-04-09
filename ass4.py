@@ -1,12 +1,7 @@
 ######TODo######
 #Fix the location thing
     #Figure out how to get the box coordinates from the radius
-#Edit credentials -> Update when changed?
-    #handle errors
-#Clear treeview when changing the search parameters?
 #Check global variables
-
-
 
 from twython import Twython
 import requests
@@ -15,8 +10,10 @@ from tkinter import ttk
 from tkinter import *
 import threading, time
 from tkinter.messagebox import askyesno
+from tkinter.messagebox import askokcancel
 from tkinter.messagebox import showerror
 from tkinter.messagebox import showwarning
+from tkinter.messagebox import showinfo
 import queue
 from geopy.geocoders import Nominatim
 from geopy.exc import GeopyError
@@ -58,9 +55,11 @@ class IncomingSubmissions(tk.Frame):
 
     def setUndoNormal(self):
         self.procmenu.entryconfigure(1, state=tk.NORMAL)
+        showinfo("Credentials Edited", "The credentials were edited successfuly. Please restart the application to apply the changes.")
 
     def setUndoDisabled(self):
         self.procmenu.entryconfigure(1, state=tk.DISABLED)
+        showinfo("Credentials Edited", "The credentials were edited successfuly. Please restart the application to apply the changes.")
 
     def showLocationError(self):
         showerror("Location Error", "No location could be found from the address provided")
@@ -93,7 +92,10 @@ class IncomingSubmissions(tk.Frame):
                 parent = tweet['in_reply_to_status_id_str']
             else:
                 parent = ''
-            self.tree.insert(parent, 'end', tweet['id'], text=tweet['user']['screen_name'].encode(), values=(t))
+            try:
+                self.tree.insert(parent, 'end', tweet['id'], text=tweet['user']['screen_name'].encode(), values=(t))
+            except tk.TclError:
+                pass
 
     def checkTweetQueue(self):
         global close
@@ -161,6 +163,9 @@ class IncomingSubmissions(tk.Frame):
         if askyesno("Confirm", "Are you sure you want to undo the last edit?"):
             threading.Thread(target=self.proc.undoProc).start()
 
+    def clearTree(self):
+        self.tree.delete(*self.tree.get_children())
+
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
@@ -216,17 +221,19 @@ class IncomingSubmissions(tk.Frame):
             "updateUndoNormal" : self.setUndoNormal,
             "updateUndoDisable" : self.setUndoDisabled,
             "locationError" : self.showLocationError,
-            "locationWarning" : self.showLocationWarning
+            "locationWarning" : self.showLocationWarning,
+            "locationSuccess" : self.clearTree
         }
 
         ####Search Parameters####
-        self.paramFrame = SearchParamFrame(parent, self.proc)
+        self.paramFrame = SearchParamFrame(parent, self.proc, self)
         self.paramFrame.grid(row=0, column=7)
 
 class SearchParamFrame(tk.Frame):
-    def __init__(self, parent, proc):
+    def __init__(self, parent, proc, iss):
         tk.Frame.__init__(self, parent)
 
+        self.iss = iss
         self.proc = proc
 
         self.searchLbl = tk.Label(self, text="Search Parameters")
@@ -256,12 +263,16 @@ class SearchParamFrame(tk.Frame):
 
 
     def startSearch(self):
+        if not askokcancel("Proceed?", "This will clear the tweets in the TreeView, but they can still be found in the respective file. Do you still want to continue?"):
+            return
+
         if self.locationEnt.get():
             if not self.radiusEnt.get():
                 showwarning("Radius", "Please specify the radius.")
             else:
                 threading.Thread(target=self.proc.getLocation, args=(self.locationEnt.get(), self.termsEnt.get(), self.langStr.get(), self.radiusEnt.get(), )).start()
         else:
+            self.iss.clearTree()
             threading.Thread(target=self.proc.search, args=(self.termsEnt.get(), self.langStr.get(), None, None,)).start()
 
 
@@ -316,6 +327,7 @@ class Processor():
                 procqueue.put("locationError")
 
             else:
+                self.procqueue.put("locationSuccess")
                 self.search(q, lang, location, radius)
         except GeopyError as err:
             f = open("log.txt", "a")
@@ -332,6 +344,7 @@ class Processor():
         print(langCode)
         streamer.disconnect()
         time.sleep(5)
+
         if location:
             geocode = str(location.latitude) + "," + str(location.longitude) + "," + radius + "km"
             threading.Thread(target=startStream, args=(q, langCode, geocode,  )).start()
@@ -360,6 +373,7 @@ class TweetStreamer(TwythonStreamer):
 
 
     def writeConversation(self, tweet):
+        print("WRINTININITNTINTINTINTINT")
         self.conversation = []
         filename = "conv_" + self.track + "_" + self.lang + "_" + str(self.geocode) + ".txt"
         f = open(filename, "a")
@@ -390,7 +404,7 @@ class TweetStreamer(TwythonStreamer):
             except exceptions.TwythonError:
                 return False
             if self.checkIfConversation(next, turns+1, people):
-                if turns == 0:
+                if turns == 1:
                     self.writeConversation(data)
                 tweetQueue.put(data)
                 return True
@@ -409,7 +423,7 @@ class TweetStreamer(TwythonStreamer):
             if data['in_reply_to_status_id']:
                 people = []
                 people.append(data['user']['id_str'])
-                self.checkIfConversation(data, 0, people)
+                self.checkIfConversation(data, 1, people)
 
         f = open("data.txt", "w")
 
@@ -457,14 +471,17 @@ APP_SECRET = cred[1][:-1]
 ACCESS_TOKEN = cred[2][:-1]
 ACCESS_SECRET = cred[3][:-1]
 
-streamer = TweetStreamer(APP_KEY, APP_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
+try:
+    streamer = TweetStreamer(APP_KEY, APP_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
 
-twitter = Twython(APP_KEY, APP_SECRET, oauth_version=2)
-ACCESS_TOKEN = twitter.obtain_access_token()
-twitter = Twython(APP_KEY, access_token=ACCESS_TOKEN)
+    twitter = Twython(APP_KEY, APP_SECRET, oauth_version=2)
+    ACCESS_TOKEN = twitter.obtain_access_token()
+    twitter = Twython(APP_KEY, access_token=ACCESS_TOKEN)
 
-t1 = threading.Thread(target=startStream, args=("twitter", "en", None, ))
-t1.start()
+    t1 = threading.Thread(target=startStream, args=("twitter", "en", None, ))
+    t1.start()
+except exceptions.TwythonError:
+    showerror("Authentication Error", "There was an error authenticating the application. Please check the credentials and try again.")
 
 root = tk.Tk()
 root.protocol("WM_DELETE_WINDOW", callback)
