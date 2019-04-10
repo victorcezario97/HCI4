@@ -7,6 +7,7 @@ from twython import Twython
 import requests
 import tkinter as tk
 from tkinter import ttk
+from tkinter import filedialog
 from tkinter import *
 import threading, time
 from tkinter.messagebox import askyesno
@@ -22,6 +23,9 @@ import datetime
 from lang import languages
 from twython import TwythonStreamer
 from twython import exceptions
+import nltk
+nltk.download('vader_lexicon')
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 class EntryWithPlaceholder(tk.Entry):
     def __init__(self, master, placeholder="PLACEHOLDER", color='grey'):
@@ -48,7 +52,6 @@ class EntryWithPlaceholder(tk.Entry):
     def foc_out(self, *args):
         if not self.get():
             self.put_placeholder()
-
 
 #Top level widget class that contains all other widgets
 class IncomingSubmissions(tk.Frame):
@@ -166,26 +169,37 @@ class IncomingSubmissions(tk.Frame):
     def clearTree(self):
         self.tree.delete(*self.tree.get_children())
 
+    def openConversation(self):
+        self.filename = filedialog.askopenfilename(initialdir = "./", title="Select file", filetypes=(("text files", "*.txt"), ("all files", "*.*")))
+
+        if self.filemenu:
+            threading.Thread(target=self.proc.openConversationProc, args=(self.filename, )).start()
+
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
 
-        parent.grid_columnconfigure(0, weight=1)
-        parent.grid_rowconfigure(0, weight=1)
+        self.proc = Processor()
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        self.titleLbl = tk.Label(self, text="TWEET STREAM")
+        self.titleLbl.grid(row=0, column=0, columnspan=9)
 
         #Comment tree and scrollbar
-        self.tree = ttk.Treeview(parent)
+        self.tree = ttk.Treeview(self)
         self.tree['columns'] = ('tweet')
         self.tree.heading('tweet', text="Tweet")
 
         self.tree.column('#0', width=150, stretch=NO)
         self.tree.column('#1', stretch=YES, minwidth=1300)
         self.tree.heading('#0', text="User")
-        self.tree.grid(row=0, column=0, columnspan=4, sticky=E+W+N+S)
+        self.tree.grid(row=1, column=0, columnspan=4, sticky=E+W+N+S)
 
-        self.treesbv = ttk.Scrollbar(parent, orient="vertical", command=self.tree.yview)
-        self.treesbv.grid(row=0, column=4, sticky=N+S+E)
-        self.treesbh = ttk.Scrollbar(parent, orient=tk.HORIZONTAL, command=self.tree.xview)
-        self.treesbh.grid(row=1, column=0, columnspan=4, sticky=E+W)
+        self.treesbv = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        self.treesbv.grid(row=1, column=4, sticky=N+S+E)
+        self.treesbh = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.treesbh.grid(row=2, column=0, columnspan=4, sticky=E+W)
 
         self.tree.configure(yscrollcommand=self.treesbv.set, xscrollcommand=self.treesbh.set)
 
@@ -194,10 +208,11 @@ class IncomingSubmissions(tk.Frame):
         self.btnText.set("PAUSE")
 
         #Menu bar
-        self.menubar = Menu(parent)
+        self.menubar = Menu(self)
 
         #Create File menu, and add it to the menu bar
         self.filemenu = Menu(self.menubar, tearoff=0)
+        self.filemenu.add_command(label="Open", command=self.openConversation)
         self.filemenu.add_command(label="Exit", command=callback)
         self.menubar.add_cascade(label="File", menu=self.filemenu)
 
@@ -215,8 +230,6 @@ class IncomingSubmissions(tk.Frame):
         global procqueue
         global tweetQueue
 
-        self.proc = Processor()
-
         self.switch = {
             "updateUndoNormal" : self.setUndoNormal,
             "updateUndoDisable" : self.setUndoDisabled,
@@ -226,8 +239,8 @@ class IncomingSubmissions(tk.Frame):
         }
 
         ####Search Parameters####
-        self.paramFrame = SearchParamFrame(parent, self.proc, self)
-        self.paramFrame.grid(row=0, column=7)
+        self.paramFrame = SearchParamFrame(self, self.proc, self)
+        self.paramFrame.grid(row=1, column=7)
 
 class SearchParamFrame(tk.Frame):
     def __init__(self, parent, proc, iss):
@@ -274,7 +287,6 @@ class SearchParamFrame(tk.Frame):
         else:
             self.iss.clearTree()
             threading.Thread(target=self.proc.search, args=(self.termsEnt.get(), self.langStr.get(), None, None,)).start()
-
 
 class Processor():
 
@@ -350,6 +362,86 @@ class Processor():
             threading.Thread(target=startStream, args=(q, langCode, geocode,  )).start()
         else:
             threading.Thread(target=startStream, args=(q, langCode, None,  )).start()
+
+    def openConversationProc(self, filename):
+        global tweetAnalyzeQueue
+        f = open(filename, "r")
+        i = 0
+        j = 0
+        tweetAnalyzeQueue.put("clearTree")
+
+        self.conversations = f.read().split("&--END--&\n")
+        for conv in self.conversations:
+            tweets = conv.split("<----->\n")
+            for t in tweets[:-1]:
+                id = str(i) + str(j)
+                if j == 0:
+                    parent = ''
+                else:
+                    parent = str(i) + str(j-1)
+
+                s = t.split('\n', 1)
+                tweetAnalyzeQueue.put([parent, id, s[0], s[1]])
+                j += 1
+            i+=1
+            j=0
+
+        tweetAnalyzeQueue.put("setConversations")
+
+
+    def getNPeople(self, conversation):
+        p = []
+
+        for tweet in conversation:
+            if p.count(tweet[0]) == 0:
+                p.append(tweet[0])
+
+        return len(p)
+
+
+    def filterConversationsProc(self, conversations, filterParam):
+        global tweetAnalyzeQueue
+        global procAnalyzeQueue
+        i = 0
+        j = 0
+
+        for c in conversations:
+            turns = len(c)
+            if turns >= filterParam[0][0] and turns <= filterParam[0][1]:
+
+                people = self.getNPeople(c)
+                if people >= filterParam[1][0] and people <= filterParam[1][1]:
+
+                    posFlag = False
+                    negFlag = False
+                    sid = SentimentIntensityAnalyzer()
+                    for t in c:
+                        ss = sid.polarity_scores(t[1])
+                        print(t[1])
+                        for k in ss:
+                            print('{0}: {1}, '.format(k, ss[k]), end='')
+                        if ss['pos'] >= filterParam[2][0]:
+                            posFlag = True
+                        if ss['neg'] >= filterParam[2][1]:
+                            negFlag = True
+                    #positivity
+                    #negativity
+                    if posFlag and negFlag:
+                        for tweet in c:
+                            if j == 0:
+                                parent = ''
+                            else:
+                                parent = str(i) + str(j-1)
+
+                            id = str(i) + str(j)
+                            tweetAnalyzeQueue.put([parent, id, tweet[0], tweet[1]])
+                            j += 1
+            j = 0
+            i += 1
+
+        procAnalyzeQueue.put("enableButton")
+
+
 
 class TweetStreamer(TwythonStreamer):
 
@@ -433,6 +525,250 @@ class TweetStreamer(TwythonStreamer):
     def on_error(self, status_code, data):
         print(status_code)
 
+######### FRAME 2 #########
+
+class FilterParamFrame(tk.Frame):
+
+    def minPeopleTraceCallback(self, *args):
+        self.maxPeopleScl.config(from_=self.minPeopleVar.get())
+
+    def maxPeopleTraceCallback(self, *args):
+        self.minPeopleScl.config(to=self.maxPeopleVar.get())
+        #print(self.minPeopleVar.get())
+
+    def minTurnsTraceCallback(self, *args):
+        self.maxTurnsScl.config(from_=self.minTurnsVar.get())
+
+    def maxTurnsTraceCallback(self, *args):
+        self.minTurnsScl.config(to=self.maxTurnsVar.get())
+
+    def getTweetChildren(self, conversation, tweetId):
+        child = self.parent.tree.get_children(tweetId)
+
+        if not child:
+            return conversation
+        else:
+            conversation.append(child[0])
+            return self.getTweetChildren(conversation, child[0])
+
+    def formatConversation(self, conversation):
+        newC = []
+        for c in conversation:
+            newC.append((self.parent.tree.item(c, option="text").decode(), self.parent.tree.item(c, option="values")[0]))
+
+        return newC
+
+    def getFilterParam(self):
+        filterParam = []
+
+        filterParam.append((self.minTurnsScl.get(), self.maxTurnsScl.get()))
+        filterParam.append((self.minPeopleScl.get(), self.maxPeopleScl.get()))
+        filterParam.append((self.positiveScl.get(), self.negativeScl.get()))
+
+        return filterParam
+
+    def getTweets(self):
+        tweets = self.parent.tree.get_children()
+        conversations = []
+        #print(self.parent.tree.get_children(tweets[0]))
+
+        for t in tweets:
+            conv = self.getTweetChildren([t],t)
+            conversations.append(self.formatConversation(conv))
+
+        print(conversations)
+        return conversations
+
+    def applyFilters(self):
+        conversations = self.parent.getConversations()
+        print("__________")
+        print(conversations)
+
+        self.applyBtn.config(state=tk.DISABLED)
+        self.parent.clearTree()
+        threading.Thread(target=Processor().filterConversationsProc, args=(conversations, self.getFilterParam())).start()
+
+
+        #print(conversations)
+
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+
+        self.parent = parent
+        #self.iss = iss
+        #self.proc = proc
+
+        self.searchLbl = tk.Label(self, text="Filter Parameters")
+        self.searchLbl.grid(row=0, column=0, columnspan=2, pady="7px")
+
+        self.minPeopleLbl = tk.Label(self, text="Minimum participants")
+        self.minPeopleLbl.grid(row=1, column=0, pady="7px")
+        self.minPeopleVar = IntVar()
+        self.minPeopleScl = tk.Scale(self, variable=self.minPeopleVar, from_=2, to=10, orient=HORIZONTAL)
+        self.minPeopleScl.grid(row=1, column=1)
+
+        self.maxPeopleLbl = tk.Label(self, text="Maximum participants")
+        self.maxPeopleLbl.grid(row=2, column=0, pady="7px")
+        self.maxPeopleVar = IntVar()
+        self.maxPeopleScl = tk.Scale(self, variable=self.maxPeopleVar, from_=2, to=10, orient=HORIZONTAL)
+        self.maxPeopleScl.grid(row=2, column=1)
+
+        self.minPeopleVar.trace("w", self.minPeopleTraceCallback)
+        self.maxPeopleVar.trace("w", self.maxPeopleTraceCallback)
+
+
+        self.minTurnsLbl = tk.Label(self, text="Minimum turns")
+        self.minTurnsLbl.grid(row=3, column=0, pady="7px")
+        self.minTurnsVar = IntVar()
+        self.minTurnsScl = tk.Scale(self, variable=self.minTurnsVar, from_=3, to=10, orient=HORIZONTAL)
+        self.minTurnsScl.grid(row=3, column=1)
+
+        self.maxTurnsLbl = tk.Label(self, text="Maximum turns")
+        self.maxTurnsLbl.grid(row=4, column=0, pady="7px")
+        self.maxTurnsVar = IntVar()
+        self.maxTurnsScl = tk.Scale(self, variable=self.maxTurnsVar, from_=3, to=10, orient=HORIZONTAL)
+        self.maxTurnsScl.grid(row=4, column=1)
+
+        self.minTurnsVar.trace("w", self.minTurnsTraceCallback)
+        self.maxTurnsVar.trace("w", self.maxTurnsTraceCallback)
+
+        self.positiveLbl = tk.Label(self, text="Positive threshold")
+        self.positiveLbl.grid(row=5, column=0, pady="7px")
+        self.positiveScl = tk.Scale(self, from_=0, to=1, orient=HORIZONTAL, resolution=0.01)
+        self.positiveScl.grid(row=5, column=1)
+
+        self.negativeLbl = tk.Label(self, text="Negative threshold")
+        self.negativeLbl.grid(row=6, column=0, pady="7px")
+        self.negativeScl = tk.Scale(self, from_=0, to=1, orient=HORIZONTAL, resolution=0.01)
+        self.negativeScl.grid(row=6, column=1)
+
+
+        self.applyBtn = tk.Button(self, text="Apply", command=self.applyFilters)
+        self.applyBtn.grid(row=7, column=0, columnspan=2, pady="7px")
+
+
+    def startSearch(self):
+        if not askokcancel("Proceed?", "This will clear the tweets in the TreeView, but they can still be found in the respective file. Do you still want to continue?"):
+            return
+
+        if self.locationEnt.get():
+            if not self.radiusEnt.get():
+                showwarning("Radius", "Please specify the radius.")
+            else:
+                threading.Thread(target=self.proc.getLocation, args=(self.locationEnt.get(), self.termsEnt.get(), self.langStr.get(), self.radiusEnt.get(), )).start()
+        else:
+            self.iss.clearTree()
+            threading.Thread(target=self.proc.search, args=(self.termsEnt.get(), self.langStr.get(), None, None,)).start()
+
+class ConversationDisplayer(tk.Frame):
+
+    def checkProcQueue(self):
+        global close
+        if close:
+            return
+
+        try:
+            message = procAnalyzeQueue.get(block=False)
+            if message is not None:
+                self.switch[message]()
+
+        except queue.Empty: pass
+        self.after(100, self.checkProcQueue)
+
+    def insertTweetAnalyze(self, tweet):
+        if self.tree.exists(tweet[1]):
+            return
+        else:
+            t = tweet[3].replace("\n", ". ").replace(" ", "\ ").encode()
+            #print(tweet['text'])
+            #print(t)
+            #print(tweet['in_reply_to_status_id'])
+            #if tweet['in_reply_to_status_id']:
+        #        parent = tweet['in_reply_to_status_id_str']
+        #    else:
+        #        parent = ''
+            try:
+                self.tree.insert(tweet[0], 'end', tweet[1], text=tweet[2].encode(), values=(t))
+            except tk.TclError:
+                pass
+
+    def checkTweetAnalyzeQueue(self):
+        global close
+
+        if close:
+            return
+
+        try:
+            tweet = tweetAnalyzeQueue.get(block=False)
+            if tweet:
+                if tweet == "clearTree":
+                    self.clearTree()
+                elif tweet == "setConversations":
+                    self.setConversations()
+                else:
+                    self.insertTweetAnalyze(tweet)
+
+        except queue.Empty: pass
+        self.after(50, self.checkTweetAnalyzeQueue)
+
+
+    def clearTree(self):
+        self.tree.delete(*self.tree.get_children())
+
+    def enableButton(self):
+        self.paramFrame.applyBtn.config(state=tk.NORMAL)
+
+    def setConversations(self):
+        self.conversations = self.paramFrame.getTweets()
+        print(self.conversations)
+
+    def getConversations(self):
+        return self.conversations
+
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        self.titleLbl = tk.Label(self, text="TWEET ANALYZER")
+        self.titleLbl.grid(row=0, column=0, columnspan=9)
+
+        #Comment tree and scrollbar
+        self.tree = ttk.Treeview(self)
+        self.tree['columns'] = ('tweet')
+        self.tree.heading('tweet', text="Tweet")
+
+        self.tree.column('#0', width=150, stretch=NO)
+        self.tree.column('#1', stretch=YES, minwidth=1300)
+        self.tree.heading('#0', text="User")
+        self.tree.grid(row=1, column=0, columnspan=4, sticky=E+W+N+S)
+
+        self.treesbv = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        self.treesbv.grid(row=1, column=4, sticky=N+S+E)
+        self.treesbh = ttk.Scrollbar(self, orient=tk.HORIZONTAL, command=self.tree.xview)
+        self.treesbh.grid(row=2, column=0, columnspan=4, sticky=E+W)
+
+        self.tree.configure(yscrollcommand=self.treesbv.set, xscrollcommand=self.treesbh.set)
+
+        global procAnalyzeQueue
+        global tweetQueue
+
+        self.proc = Processor()
+
+        self.switch = {
+            "locationSuccess" : self.clearTree,
+            "enableButton" : self.enableButton,
+            "setConversations" : self.setConversations
+        }
+
+        ####Search Parameters####
+        self.paramFrame = FilterParamFrame(self)
+        self.paramFrame.grid(row=1, column=7)
+
+        self.conversations = []
+
+
 
 def startStream(q, lang, geocode):
 
@@ -442,7 +778,6 @@ def startStream(q, lang, geocode):
     else:
         streamer.setParameters(lang, q, None)
         streamer.statuses.filter(language=lang, track=q)
-
 
 def getCredentials():
     f = open("credentials.txt", "r")
@@ -460,6 +795,9 @@ def getClose():
 
 procqueue = queue.Queue()
 tweetQueue = queue.Queue()
+procAnalyzeQueue = queue.Queue()
+tweetAnalyzeQueue = queue.Queue()
+
 close = False
 
 edits = []
@@ -485,7 +823,15 @@ except exceptions.TwythonError:
 
 root = tk.Tk()
 root.protocol("WM_DELETE_WINDOW", callback)
+
+mainFrame = tk.Frame(root)
 iss = IncomingSubmissions(root)
+iss.grid(row=0, column=0, sticky=N+S+E+W)
 iss.checkProcQueue()
 threading.Thread(target=iss.checkTweetQueue).start()
+
+cd = ConversationDisplayer(root)
+cd.grid(row=3, column=0)
+cd.checkProcQueue()
+threading.Thread(target=cd.checkTweetAnalyzeQueue).start()
 root.mainloop()
